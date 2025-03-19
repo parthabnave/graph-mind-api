@@ -1,3 +1,4 @@
 fastapi
 google.generativeai
 pydantic
+uvicorn
