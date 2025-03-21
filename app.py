@@ -11,9 +11,6 @@ genai.configure(api_key=API_KEY)
 
 class PlantUMLRequest(BaseModel):
     prompt: str
-    diagram_type: str  # Restrict to "use_case" or "architecture"
-    temperature: float = 0.5  # Lower temperature for more precise output
-    max_output_tokens: int = 2048
 
 class PlantUMLResponse(BaseModel):
     plantuml_code: str | None
