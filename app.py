@@ -11,42 +11,58 @@ genai.configure(api_key=API_KEY)
 
 class PlantUMLRequest(BaseModel):
     prompt: str
-    temperature: float = 0.7
-    top_p: float = 1.0
-    top_k: int = 1
+    diagram_type: str  # Restrict to "use_case" or "architecture"
+    temperature: float = 0.5  # Lower temperature for more precise output
     max_output_tokens: int = 2048
 
 class PlantUMLResponse(BaseModel):
     plantuml_code: str | None
     error: str | None
 
-def generate_plantuml(model_name, request: PlantUMLRequest):
+def generate_plantuml(model_name: str, request: PlantUMLRequest) -> str | None:
     try:
-        diagram_type = "chen" if "ER diagram" in request.prompt.lower() else "uml"
-        plantuml_prompt = f"""
-        Generate {diagram_type.upper()} code for the following description:
-        {request.prompt}
-        Please provide only the code block, enclosed in @start{diagram_type} and @end{diagram_type} tags.
-        """
+        # Validate diagram_type
+        if request.diagram_type not in ["use_case", "architecture"]:
+            raise ValueError("diagram_type must be 'use_case' or 'architecture'")
+
+        # Tailored prompts for each diagram type
+        if request.diagram_type == "use_case":
+            plantuml_prompt = f"""
+            Generate PlantUML code for a Use Case Diagram based on this description:
+            {request.prompt}
+            - Use actors (e.g., :ActorName:) and use cases (e.g., (UseCaseName)).
+            - Connect actors to use cases with -->.
+            - Use concise, standard PlantUML syntax.
+            - Enclose the code in @startuml and @enduml tags only.
+            - Do not include explanations or additional text outside the tags.
+            """
+        elif request.diagram_type == "architecture":
+            plantuml_prompt = f"""
+            Generate PlantUML code for a System Architecture Diagram based on this description:
+            {request.prompt}
+            - Use components (e.g., [ComponentName]), interfaces, and nodes if specified.
+            - Connect components with --> or -[hidden]-> for clarity.
+            - Use concise, standard PlantUML syntax.
+            - Enclose the code in @startuml and @enduml tags only.
+            - Do not include explanations or additional text outside the tags.
+            """
 
         model = genai.GenerativeModel(model_name)
         response = model.generate_content(
             plantuml_prompt,
             generation_config=genai.GenerationConfig(
-                temperature=request.temperature,
-                top_p=request.top_p,
-                top_k=request.top_k,
+                temperature=request.temperature,  # Lower temperature for precision
                 max_output_tokens=request.max_output_tokens,
             ),
         )
         return response.text
     except Exception as e:
-        logging.error(f"Error generating PlantUML: {e}")
+        print(f"Error generating PlantUML: {e}")
         return None
 
-def extract_plantuml_code(text, is_er_diagram):
-    start_tag = "@startchen" if is_er_diagram else "@startuml"
-    end_tag = "@endchen" if is_er_diagram else "@enduml"
+def extract_plantuml_code(text: str) -> str | None:
+    start_tag = "@startuml"
+    end_tag = "@enduml"
     start_index = text.find(start_tag)
     end_index = text.find(end_tag)
     if start_index != -1 and end_index != -1:
@@ -59,12 +75,11 @@ async def health_check():
 
 @app.post("/generate_plantuml", response_model=PlantUMLResponse)
 async def generate_plantuml_api(request: PlantUMLRequest = Body(...)):
-    is_er_diagram = "ER diagram" in request.prompt.lower()
     generated_text = generate_plantuml(MODEL_NAME, request)
     if generated_text:
-        extracted_code = extract_plantuml_code(generated_text, is_er_diagram)
+        extracted_code = extract_plantuml_code(generated_text)
         if extracted_code:
             return PlantUMLResponse(plantuml_code=extracted_code, error=None)
         else:
-            return PlantUMLResponse(plantuml_code=None, error="Could not extract PlantUML or Chen code from the response.")
+            return PlantUMLResponse(plantuml_code=None, error="Could not extract PlantUML code from the response.")
     raise HTTPException(status_code=500, detail="Failed to generate diagram code.")
