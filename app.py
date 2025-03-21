@@ -16,40 +16,28 @@ class PlantUMLResponse(BaseModel):
     plantuml_code: str | None
     error: str | None
 
-def generate_plantuml(model_name: str, request: PlantUMLRequest) -> str | None:
+def generate_plantuml(model_name: str, prompt: str) -> str | None:
     try:
-        # Validate diagram_type
-        if request.diagram_type not in ["use_case", "architecture"]:
-            raise ValueError("diagram_type must be 'use_case' or 'architecture'")
-
-        # Tailored prompts for each diagram type
-        if request.diagram_type == "use_case":
-            plantuml_prompt = f"""
-            Generate PlantUML code for a Use Case Diagram based on this description:
-            {request.prompt}
-            - Use actors (e.g., :ActorName:) and use cases (e.g., (UseCaseName)).
-            - Connect actors to use cases with -->.
-            - Use concise, standard PlantUML syntax.
-            - Enclose the code in @startuml and @enduml tags only.
-            - Do not include explanations or additional text outside the tags.
-            """
-        elif request.diagram_type == "architecture":
-            plantuml_prompt = f"""
-            Generate PlantUML code for a System Architecture Diagram based on this description:
-            {request.prompt}
-            - Use components (e.g., [ComponentName]), interfaces, and nodes if specified.
-            - Connect components with --> or -[hidden]-> for clarity.
-            - Use concise, standard PlantUML syntax.
-            - Enclose the code in @startuml and @enduml tags only.
-            - Do not include explanations or additional text outside the tags.
-            """
-
+        # Use AI to identify the diagram type and generate PlantUML
+        classification_prompt = f"Identify the type of diagram (Use Case, Architecture, or Other) based on this description: {prompt}"
         model = genai.GenerativeModel(model_name)
+        diagram_type_response = model.generate_content(classification_prompt)
+        diagram_type = diagram_type_response.text.strip().lower()
+
+        # Formulating the generation prompt
+        plantuml_prompt = f"""
+        Generate PlantUML code for a {diagram_type.capitalize()} Diagram based on this description:
+        {prompt}
+        - Enclose the code in @startuml and @enduml tags only.
+        - Assume required components to generate accurate code
+        - Do not include explanations or additional text outside the tags.
+        """
+
         response = model.generate_content(
             plantuml_prompt,
             generation_config=genai.GenerationConfig(
-                temperature=request.temperature,  # Lower temperature for precision
-                max_output_tokens=request.max_output_tokens,
+                temperature=0.7,
+                max_output_tokens=2048,
             ),
         )
         return response.text
@@ -72,7 +60,7 @@ async def health_check():
 
 @app.post("/generate_plantuml", response_model=PlantUMLResponse)
 async def generate_plantuml_api(request: PlantUMLRequest = Body(...)):
-    generated_text = generate_plantuml(MODEL_NAME, request)
+    generated_text = generate_plantuml(MODEL_NAME, request.prompt)
     if generated_text:
         extracted_code = extract_plantuml_code(generated_text)
         if extracted_code:
